@@ -1,21 +1,21 @@
 /**
  * VMware Continuent Tungsten Replicator
  * Copyright (C) 2015 VMware, Inc. All rights reserved.
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
- *      
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * <p>
  * Initial developer(s): Robert Hodges
- * Contributor(s): 
+ * Contributor(s):
  */
 
 package com.continuent.tungsten.replicator.applier;
@@ -60,34 +60,32 @@ import com.mongodb.Mongo;
  * Implements an applier for MongoDB. This class handles only row updates, as
  * SQL statements are meaningless in MongoDB. We use a local version of the
  * Tungsten trep_commit_seqno table to keep track of updates.
- * 
+ *
  * @author <a href="mailto:robert.hodges@continuent.com">Robert Hodges</a>
  * @version 1.0
  */
-public class MongoApplier implements RawApplier
-{
-    private static Logger      logger        = Logger.getLogger(MongoApplier.class);
+public class MongoApplier implements RawApplier {
+    private static Logger logger = Logger.getLogger(MongoApplier.class);
 
     // Task management information.
-    private int                taskId;
-    private String             serviceSchema;
+    private int taskId;
+    private String serviceSchema;
 
     // Latest event.
-    private ReplDBMSHeader     latestHeader;
+    private ReplDBMSHeader latestHeader;
 
     // Parameters for the applier.
-    private String             connectString = null;
-    private boolean            autoIndex     = false;
+    private String connectString = null;
+    private boolean autoIndex = false;
 
     // Private connection management.
-    private Mongo              m;
+    private Mongo m;
 
     // Table metadata to support auto-indexing.
     private TableMetadataCache tableMetadataCache;
 
     /** Set the MongoDB connect string, e.g., "myhost:27071". */
-    public void setConnectString(String connectString)
-    {
+    public void setConnectString(String connectString) {
         this.connectString = connectString;
     }
 
@@ -95,51 +93,42 @@ public class MongoApplier implements RawApplier
      * If set to true, generate indexes automatically on keys whenever we see a
      * table for the first time.
      */
-    public void setAutoIndex(boolean autoIndex)
-    {
+    public void setAutoIndex(boolean autoIndex) {
         this.autoIndex = autoIndex;
     }
 
     /**
      * Applies row updates to MongoDB. Statements are discarded. {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.applier.RawApplier#apply(com.continuent.tungsten.replicator.event.DBMSEvent,
      *      com.continuent.tungsten.replicator.event.ReplDBMSHeader, boolean,
      *      boolean)
      */
     @Override
     public void apply(DBMSEvent event, ReplDBMSHeader header, boolean doCommit,
-            boolean doRollback) throws ReplicatorException,
-            ConsistencyException, InterruptedException
-    {
+                      boolean doRollback) throws ReplicatorException,
+            ConsistencyException, InterruptedException {
         ArrayList<DBMSData> dbmsDataValues = event.getData();
 
         // Iterate through values inferring the database name.
-        for (DBMSData dbmsData : dbmsDataValues)
-        {
-            if (dbmsData instanceof StatementData)
-            {
+        for (DBMSData dbmsData : dbmsDataValues) {
+            if (dbmsData instanceof StatementData) {
                 if (logger.isDebugEnabled())
                     logger.debug("Ignoring statement");
-            }
-            else if (dbmsData instanceof RowChangeData)
-            {
+            } else if (dbmsData instanceof RowChangeData) {
                 RowChangeData rd = (RowChangeData) dbmsData;
-                for (OneRowChange orc : rd.getRowChanges())
-                {
+                for (OneRowChange orc : rd.getRowChanges()) {
                     // Get the action as well as the schema & table name.
                     ActionType action = orc.getAction();
                     String schema = orc.getSchemaName();
                     String table = orc.getTableName();
-                    if (logger.isDebugEnabled())
-                    {
+                    if (logger.isDebugEnabled()) {
                         logger.debug("Processing row update: action=" + action
                                 + " schema=" + schema + " table=" + table);
                     }
 
                     // Process the action.
-                    if (action.equals(ActionType.INSERT))
-                    {
+                    if (action.equals(ActionType.INSERT)) {
                         // Connect to the schema and collection.
                         DB db = m.getDB(schema);
                         DBCollection coll = db.getCollection(table);
@@ -150,12 +139,10 @@ public class MongoApplier implements RawApplier
                         // Make a document and insert for each row.
                         Iterator<ArrayList<ColumnVal>> colValues = orc
                                 .getColumnValues().iterator();
-                        while (colValues.hasNext())
-                        {
+                        while (colValues.hasNext()) {
                             BasicDBObject doc = new BasicDBObject();
                             ArrayList<ColumnVal> row = colValues.next();
-                            for (int i = 0; i < row.size(); i++)
-                            {
+                            for (int i = 0; i < row.size(); i++) {
                                 Object value = row.get(i).getValue();
                                 setValue(doc, colSpecs.get(i), value);
                             }
@@ -164,9 +151,7 @@ public class MongoApplier implements RawApplier
                                         + doc.toString());
                             coll.insert(doc);
                         }
-                    }
-                    else if (action.equals(ActionType.UPDATE))
-                    {
+                    } else if (action.equals(ActionType.UPDATE)) {
                         // Connect to the schema and collection.
                         DB db = m.getDB(schema);
                         DBCollection coll = db.getCollection(table);
@@ -184,35 +169,30 @@ public class MongoApplier implements RawApplier
 
                         // Iterate across the rows.
                         for (int row = 0; row < columnValues.size()
-                                || row < keyValues.size(); row++)
-                        {
+                                || row < keyValues.size(); row++) {
                             List<ColumnVal> keyValuesOfRow = keyValues.get(row);
                             List<ColumnVal> colValuesOfRow = columnValues
                                     .get(row);
 
                             // Prepare key values query to search for rows.
                             DBObject query = new BasicDBObject();
-                            for (int i = 0; i < keyValuesOfRow.size(); i++)
-                            {
+                            for (int i = 0; i < keyValuesOfRow.size(); i++) {
                                 setValue(query, keySpecs.get(i), keyValuesOfRow
                                         .get(i).getValue());
                             }
 
                             BasicDBObject doc = new BasicDBObject();
-                            for (int i = 0; i < colValuesOfRow.size(); i++)
-                            {
+                            for (int i = 0; i < colValuesOfRow.size(); i++) {
                                 setValue(doc, colSpecs.get(i), colValuesOfRow
                                         .get(i).getValue());
                             }
-                            if (logger.isDebugEnabled())
-                            {
+                            if (logger.isDebugEnabled()) {
                                 logger.debug("Updating document: query="
                                         + query + " doc=" + doc);
                             }
                             DBObject updatedRow = coll
                                     .findAndModify(query, doc);
-                            if (logger.isDebugEnabled())
-                            {
+                            if (logger.isDebugEnabled()) {
                                 if (updatedRow == null)
                                     logger.debug("Unable to find document for update: query="
                                             + query);
@@ -221,9 +201,7 @@ public class MongoApplier implements RawApplier
                                             + doc);
                             }
                         }
-                    }
-                    else if (action.equals(ActionType.DELETE))
-                    {
+                    } else if (action.equals(ActionType.DELETE)) {
                         // Connect to the schema and collection.
                         DB db = m.getDB(schema);
                         DBCollection coll = db.getCollection(table);
@@ -239,26 +217,22 @@ public class MongoApplier implements RawApplier
 
                         // Iterate across the rows.
                         for (int row = 0; row < columnValues.size()
-                                || row < keyValues.size(); row++)
-                        {
+                                || row < keyValues.size(); row++) {
                             List<ColumnVal> keyValuesOfRow = keyValues.get(row);
 
                             // Prepare key values query to search for rows.
                             DBObject query = new BasicDBObject();
-                            for (int i = 0; i < keyValuesOfRow.size(); i++)
-                            {
+                            for (int i = 0; i < keyValuesOfRow.size(); i++) {
                                 setValue(query, keySpecs.get(i), keyValuesOfRow
                                         .get(i).getValue());
                             }
 
-                            if (logger.isDebugEnabled())
-                            {
+                            if (logger.isDebugEnabled()) {
                                 logger.debug("Deleting document: query="
                                         + query);
                             }
                             DBObject deletedRow = coll.findAndRemove(query);
-                            if (logger.isDebugEnabled())
-                            {
+                            if (logger.isDebugEnabled()) {
                                 if (deletedRow == null)
                                     logger.debug("Unable to find document for delete");
                                 else
@@ -266,26 +240,18 @@ public class MongoApplier implements RawApplier
                                             + deletedRow);
                             }
                         }
-                    }
-                    else
-                    {
+                    } else {
                         logger.warn("Unrecognized action type: " + action);
                         return;
                     }
                 }
-            }
-            else if (dbmsData instanceof LoadDataFileFragment)
-            {
+            } else if (dbmsData instanceof LoadDataFileFragment) {
                 if (logger.isDebugEnabled())
                     logger.debug("Ignoring load data file fragment");
-            }
-            else if (dbmsData instanceof RowIdData)
-            {
+            } else if (dbmsData instanceof RowIdData) {
                 if (logger.isDebugEnabled())
                     logger.debug("Ignoring row ID data");
-            }
-            else
-            {
+            } else {
                 logger.warn("Unsupported DbmsData class: "
                         + dbmsData.getClass().getName());
             }
@@ -304,52 +270,63 @@ public class MongoApplier implements RawApplier
      * @throws ReplicatorException
      */
     private void setValue(DBObject doc, ColumnSpec columnSpec, Object value)
-            throws ReplicatorException
-    {
+            throws ReplicatorException {
         String name = columnSpec.getName();
 
         if (value == null)
             doc.put(name, value);
         else if (value instanceof SerialBlob)
             doc.put(name, deserializeBlob(name, (SerialBlob) value));
-        else if (columnSpec.getType() == Types.TIME)
-        {
-            if (value instanceof Timestamp)
-            {
+        else if (columnSpec.getType() == Types.TIME) {
+            if (value instanceof Timestamp) {
                 Timestamp timestamp = ((Timestamp) value);
                 StringBuffer time = new StringBuffer(new Time(
                         timestamp.getTime()).toString());
-                if (timestamp.getNanos() > 0)
-                {
+                if (timestamp.getNanos() > 0) {
                     time.append(".");
                     time.append(String.format("%09d", timestamp.getNanos()));
                 }
                 doc.put(name, time.toString());
-            }
-            else
-            {
+            } else {
                 Time t = (Time) value;
                 doc.put(name, t.toString());
             }
-        }
-        else
+        } else
             doc.put(name, value.toString());
     }
 
+    private String generateIndexName(DBObject keys) {
+        Iterator i$ = keys.keySet().iterator();
+        String name = "";
+        while (true) {
+            Object val;
+            do {
+                if (!i$.hasNext()) {
+                    return name;
+                }
+                String s = (String) i$.next();
+                s = s.substring(0, 2);
+                if (name.length() > 0) {
+                    name = name + "_";
+                }
+                name = name + s;
+                val = keys.get(s);
+            } while (!(val instanceof Number) && !(val instanceof String));
+
+            name = name + val.toString().replace(' ', '_');
+        }
+    }
+
     // Ensure that a collection has required indexes.
-    private void ensureIndexes(DBCollection coll, OneRowChange orc)
-    {
+    private void ensureIndexes(DBCollection coll, OneRowChange orc) {
         // If we have not seen this table before, check whether it
         // needs an index.
-        if (autoIndex)
-        {
+        if (autoIndex) {
             String schema = orc.getSchemaName();
             String table = orc.getTableName();
             Table t = tableMetadataCache.retrieve(schema, table);
-            if (t == null)
-            {
-                if (logger.isDebugEnabled())
-                {
+            if (t == null) {
+                if (logger.isDebugEnabled()) {
                     logger.debug("Ensuring index exists on collection: db="
                             + schema + " collection=" + table);
                 }
@@ -357,14 +334,14 @@ public class MongoApplier implements RawApplier
                 // Compute required index keys and ensure they
                 // exist in MongoDB.
                 List<ColumnSpec> keySpecs = orc.getKeySpec();
-                if (keySpecs.size() > 0)
-                {
+                if (keySpecs.size() > 0) {
                     BasicDBObjectBuilder builder = BasicDBObjectBuilder.start();
-                    for (ColumnSpec keySpec : keySpecs)
-                    {
+                    for (ColumnSpec keySpec : keySpecs) {
                         builder.add(keySpec.getName(), 1);
                     }
-                    coll.ensureIndex(builder.get());
+//                    coll.ensureIndex(builder.get());
+                    DBObject keys = builder.get();
+                    coll.ensureIndex(keys, generateIndexName(keys));
                 }
 
                 // Note that we have processed the table.
@@ -377,26 +354,19 @@ public class MongoApplier implements RawApplier
     // Deserialize a blob value. This assumes there are some kind of
     // characters in the byte array that can be translated to a string.
     private String deserializeBlob(String name, SerialBlob blob)
-            throws ReplicatorException
-    {
-        try
-        {
+            throws ReplicatorException {
+        try {
             long length = blob.length();
-            if (length > 0)
-            {
+            if (length > 0) {
                 // Try to deserialize.
                 byte[] byteArray = blob.getBytes(1, (int) length);
                 String value = new String(byteArray);
                 return value;
-            }
-            else
-            {
+            } else {
                 // The blob is empty, so just return an empty string.
                 return "";
             }
-        }
-        catch (SerialException e)
-        {
+        } catch (SerialException e) {
             throw new ReplicatorException(
                     "Unable to deserialize blob value: column=" + name, e);
         }
@@ -404,15 +374,13 @@ public class MongoApplier implements RawApplier
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.applier.RawApplier#commit()
      */
     @Override
-    public void commit() throws ReplicatorException, InterruptedException
-    {
+    public void commit() throws ReplicatorException, InterruptedException {
         // If we don't have a last header, there is nothing to be done.
-        if (latestHeader == null)
-        {
+        if (latestHeader == null) {
             if (logger.isDebugEnabled())
                 logger.debug("Unable to commit; last header is null");
             return;
@@ -442,8 +410,7 @@ public class MongoApplier implements RawApplier
         // Update trep_commit_seqno.
         DBObject updatedDoc = trepCommitSeqno.findAndModify(query, null, null,
                 false, doc, true, true);
-        if (logger.isDebugEnabled())
-        {
+        if (logger.isDebugEnabled()) {
             if (updatedDoc == null)
                 logger.debug("Unable to update/insert trep_commit_seqno: query="
                         + query + " doc=" + doc);
@@ -455,13 +422,12 @@ public class MongoApplier implements RawApplier
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.applier.RawApplier#getLastEvent()
      */
     @Override
     public ReplDBMSHeader getLastEvent() throws ReplicatorException,
-            InterruptedException
-    {
+            InterruptedException {
         // Connect to the schema and collection.
         DB db = m.getDB(serviceSchema);
         DBCollection trepCommitSeqno = db.getCollection("trep_commit_seqno");
@@ -475,14 +441,11 @@ public class MongoApplier implements RawApplier
 
         // Return a constructed header or null, depending on whether we found
         // anything.
-        if (doc == null)
-        {
+        if (doc == null) {
             if (logger.isDebugEnabled())
                 logger.debug("trep_commit_seqno is empty: taskId=" + taskId);
             return null;
-        }
-        else
-        {
+        } else {
             if (logger.isDebugEnabled())
                 logger.debug("trep_commit_seqno entry found: doc=" + doc);
 
@@ -504,63 +467,55 @@ public class MongoApplier implements RawApplier
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.applier.RawApplier#rollback()
      */
     @Override
-    public void rollback() throws InterruptedException
-    {
+    public void rollback() throws InterruptedException {
         // Does nothing for now.
     }
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.applier.RawApplier#setTaskId(int)
      */
     @Override
-    public void setTaskId(int id)
-    {
+    public void setTaskId(int id) {
         this.taskId = id;
     }
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.plugin.ReplicatorPlugin#configure(com.continuent.tungsten.replicator.plugin.PluginContext)
      */
     @Override
     public void configure(PluginContext context) throws ReplicatorException,
-            InterruptedException
-    {
+            InterruptedException {
         this.serviceSchema = "tungsten_" + context.getServiceName();
     }
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.plugin.ReplicatorPlugin#prepare(com.continuent.tungsten.replicator.plugin.PluginContext)
      */
     @Override
     public void prepare(PluginContext context) throws ReplicatorException,
-            InterruptedException
-    {
+            InterruptedException {
         // Connect to MongoDB.
-        if (logger.isDebugEnabled())
-        {
+        if (logger.isDebugEnabled()) {
             logger.debug("Connecting to MongoDB: connectString="
                     + connectString);
         }
         m = null;
-        try
-        {
+        try {
             if (connectString == null)
                 m = new Mongo();
             else
                 m = new Mongo(connectString);
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             throw new ReplicatorException(
                     "Unable to connect to MongoDB: connection="
                             + this.connectString, e);
@@ -572,23 +527,20 @@ public class MongoApplier implements RawApplier
 
     /**
      * {@inheritDoc}
-     * 
+     *
      * @see com.continuent.tungsten.replicator.plugin.ReplicatorPlugin#release(com.continuent.tungsten.replicator.plugin.PluginContext)
      */
     @Override
     public void release(PluginContext context) throws ReplicatorException,
-            InterruptedException
-    {
+            InterruptedException {
         // Close connection to MongoDB.
-        if (m != null)
-        {
+        if (m != null) {
             m.close();
             m = null;
         }
 
         // Release table cache.
-        if (tableMetadataCache != null)
-        {
+        if (tableMetadataCache != null) {
             tableMetadataCache.invalidateAll();
             tableMetadataCache = null;
         }
