@@ -190,8 +190,10 @@ public class MongoApplier implements RawApplier {
                                 logger.debug("Updating document: query="
                                         + query + " doc=" + doc);
                             }
+                            BasicDBObject doc_set = new BasicDBObject();
+                            doc_set.put("$set", doc);
                             DBObject updatedRow = coll
-                                    .findAndModify(query, doc);
+                                    .findAndModify(query, doc_set);
                             if (logger.isDebugEnabled()) {
                                 if (updatedRow == null)
                                     logger.debug("Unable to find document for update: query="
