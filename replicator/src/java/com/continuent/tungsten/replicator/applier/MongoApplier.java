@@ -55,6 +55,8 @@ import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
 import com.mongodb.Mongo;
+import com.mongodb.WriteConcern;
+
 
 /**
  * Implements an applier for MongoDB. This class handles only row updates, as
@@ -109,7 +111,10 @@ public class MongoApplier implements RawApplier {
                       boolean doRollback) throws ReplicatorException,
             ConsistencyException, InterruptedException {
         ArrayList<DBMSData> dbmsDataValues = event.getData();
-
+        m.setWriteConcern(new WriteConcern(2));
+        // WriteConcern wc = new WriteConcern();
+        // wc.withW("majority");
+        // m.setWriteConcern(wc);
         // Iterate through values inferring the database name.
         for (DBMSData dbmsData : dbmsDataValues) {
             if (dbmsData instanceof StatementData) {
