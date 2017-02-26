@@ -26,6 +26,9 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.HashSet; 
+import java.util.Set; 
 
 import javax.sql.rowset.serial.SerialBlob;
 import javax.sql.rowset.serial.SerialException;
@@ -51,12 +54,18 @@ import com.continuent.tungsten.replicator.event.ReplDBMSHeaderData;
 import com.continuent.tungsten.replicator.plugin.PluginContext;
 import com.mongodb.BasicDBObject;
 import com.mongodb.BasicDBObjectBuilder;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
-import com.mongodb.Mongo;
+import com.mongodb.MongoClient;
 import com.mongodb.WriteConcern;
-
+import com.mongodb.MongoClientURI;
+import com.mongodb.MongoCredential;
+import com.mongodb.ServerAddress;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Filters.and;
 
 /**
  * Implements an applier for MongoDB. This class handles only row updates, as
@@ -78,10 +87,16 @@ public class MongoApplier implements RawApplier {
 
     // Parameters for the applier.
     private String connectString = null;
+    private String connectHost = null;
+    private String connectPort = null;
+    private String connectUsername = null;
+    private String connectPassword = null;
+    private String connectAuth = null;
+    private String authDatabase = null;
     private boolean autoIndex = false;
 
     // Private connection management.
-    private Mongo m;
+    private MongoClient m;
 
     // Table metadata to support auto-indexing.
     private TableMetadataCache tableMetadataCache;
@@ -90,6 +105,39 @@ public class MongoApplier implements RawApplier {
     public void setConnectString(String connectString) {
         this.connectString = connectString;
     }
+
+
+    /** Set the MongoDB connect string, e.g., "127.0.0.1". */
+    public void setConnectHost(String connectHost) {
+        this.connectHost = connectHost;
+    }
+
+    /** Set the MongoDB connect string, e.g., "27017". */
+    public void setConnectPort(String connectPort) {
+        this.connectPort = connectPort;
+    }
+
+    /** Set the MongoDB username. */
+    public void setConnectUsername(String connectUsername) {
+        this.connectUsername = connectUsername;
+    }
+
+    /** Set the MongoDB password. */
+    public void setConnectPassword(String connectPassword) {
+        this.connectPassword = connectPassword;
+    }
+    
+    
+    /** Set the MongoDB auth type, now only support SCRAM-SHA-1.  */
+    public void setConnectAuth(String connectAuth) {
+        this.connectAuth = connectAuth;
+    }
+
+    /** Set the MongoDB auth type, now only support SCRAM-SHA-1.  */
+    public void setAuthDatabase(String authDatabase) {
+        this.authDatabase = authDatabase;
+    }
+
 
     /**
      * If set to true, generate indexes automatically on keys whenever we see a
@@ -135,8 +183,8 @@ public class MongoApplier implements RawApplier {
                     // Process the action.
                     if (action.equals(ActionType.INSERT)) {
                         // Connect to the schema and collection.
-                        DB db = m.getDB(schema);
-                        DBCollection coll = db.getCollection(table);
+                        MongoDatabase db = m.getDatabase(schema);
+                        MongoCollection<Document> coll = db.getCollection(table);
 
                         // Fetch column names.
                         List<ColumnSpec> colSpecs = orc.getColumnSpec();
@@ -145,21 +193,24 @@ public class MongoApplier implements RawApplier {
                         Iterator<ArrayList<ColumnVal>> colValues = orc
                                 .getColumnValues().iterator();
                         while (colValues.hasNext()) {
-                            BasicDBObject doc = new BasicDBObject();
+                            
+                            Document doc = new Document();
+                            //BasicDBObject doc = new BasicDBObject();
                             ArrayList<ColumnVal> row = colValues.next();
                             for (int i = 0; i < row.size(); i++) {
                                 Object value = row.get(i).getValue();
                                 setValue(doc, colSpecs.get(i), value);
+                                //doc.append(colSpecs.get(i).toString(), value);
                             }
                             if (logger.isDebugEnabled())
                                 logger.debug("Adding document: doc="
                                         + doc.toString());
-                            coll.insert(doc);
+                            coll.insertOne(doc);
                         }
                     } else if (action.equals(ActionType.UPDATE)) {
                         // Connect to the schema and collection.
-                        DB db = m.getDB(schema);
-                        DBCollection coll = db.getCollection(table);
+                        MongoDatabase  db = m.getDatabase(schema);
+                        MongoCollection<Document> coll = db.getCollection(table);
 
                         // Ensure required indexes are present.
                         ensureIndexes(coll, orc);
@@ -180,14 +231,18 @@ public class MongoApplier implements RawApplier {
                                     .get(row);
 
                             // Prepare key values query to search for rows.
-                            DBObject query = new BasicDBObject();
+                            //DBObject query = new BasicDBObject();
+                            Document query = new Document();
                             for (int i = 0; i < keyValuesOfRow.size(); i++) {
+                                //query.append(keySpecs.get(i).toString(), keyValuesOfRow.get(i).getValue());
                                 setValue(query, keySpecs.get(i), keyValuesOfRow
                                         .get(i).getValue());
                             }
 
-                            BasicDBObject doc = new BasicDBObject();
+                            //BasicDBObject doc = new BasicDBObject();
+                            Document doc = new Document();
                             for (int i = 0; i < colValuesOfRow.size(); i++) {
+                                //doc.append(colSpecs.get(i).toString(), colValuesOfRow.get(i).getValue());
                                 setValue(doc, colSpecs.get(i), colValuesOfRow
                                         .get(i).getValue());
                             }
@@ -195,10 +250,13 @@ public class MongoApplier implements RawApplier {
                                 logger.debug("Updating document: query="
                                         + query + " doc=" + doc);
                             }
-                            BasicDBObject doc_set = new BasicDBObject();
-                            doc_set.put("$set", doc);
-                            DBObject updatedRow = coll
-                                    .findAndModify(query, doc_set);
+                            //BasicDBObject doc_set = new BasicDBObject();
+                            //Document doc_set = new Document();
+                            //doc_set.append("$set", doc);
+                            //Document updatedRow = coll
+                            //        .findAndModify(query, doc_set);
+                            coll.updateOne(setQuery(query), new Document("$set", doc));
+                            /*
                             if (logger.isDebugEnabled()) {
                                 if (updatedRow == null)
                                     logger.debug("Unable to find document for update: query="
@@ -207,11 +265,12 @@ public class MongoApplier implements RawApplier {
                                     logger.debug("Documented updated: doc="
                                             + doc);
                             }
+                            */
                         }
                     } else if (action.equals(ActionType.DELETE)) {
                         // Connect to the schema and collection.
-                        DB db = m.getDB(schema);
-                        DBCollection coll = db.getCollection(table);
+                        MongoDatabase  db = m.getDatabase(schema);
+                        MongoCollection<Document> coll = db.getCollection(table);
 
                         // Ensure required indexes are present.
                         ensureIndexes(coll, orc);
@@ -228,8 +287,10 @@ public class MongoApplier implements RawApplier {
                             List<ColumnVal> keyValuesOfRow = keyValues.get(row);
 
                             // Prepare key values query to search for rows.
-                            DBObject query = new BasicDBObject();
+                            //DBObject query = new BasicDBObject();
+                            Document query = new Document();
                             for (int i = 0; i < keyValuesOfRow.size(); i++) {
+                                //query.append(keySpecs.get(i).toSrting(), keyValuesOfRow.get(i).getValue());
                                 setValue(query, keySpecs.get(i), keyValuesOfRow
                                         .get(i).getValue());
                             }
@@ -238,7 +299,10 @@ public class MongoApplier implements RawApplier {
                                 logger.debug("Deleting document: query="
                                         + query);
                             }
-                            DBObject deletedRow = coll.findAndRemove(query);
+                            //DBObject deletedRow = coll.findAndRemove(query);
+                            //Document deletedRow = coll.findAndRemove(query);
+                            coll.deleteOne(setQuery(query));
+                            /*
                             if (logger.isDebugEnabled()) {
                                 if (deletedRow == null)
                                     logger.debug("Unable to find document for delete");
@@ -246,6 +310,7 @@ public class MongoApplier implements RawApplier {
                                     logger.debug("Documented deleted: doc="
                                             + deletedRow);
                             }
+                            */
                         }
                     } else {
                         logger.warn("Unrecognized action type: " + action);
@@ -276,14 +341,14 @@ public class MongoApplier implements RawApplier {
      * @param value
      * @throws ReplicatorException
      */
-    private void setValue(DBObject doc, ColumnSpec columnSpec, Object value)
+    private void setValue(Document doc, ColumnSpec columnSpec, Object value)
             throws ReplicatorException {
         String name = columnSpec.getName();
 
         if (value == null)
-            doc.put(name, value);
+            doc.append(name, value);
         else if (value instanceof SerialBlob)
-            doc.put(name, deserializeBlob(name, (SerialBlob) value));
+            doc.append(name, deserializeBlob(name, (SerialBlob) value));
         else if (columnSpec.getType() == Types.TIME) {
             if (value instanceof Timestamp) {
                 Timestamp timestamp = ((Timestamp) value);
@@ -296,12 +361,26 @@ public class MongoApplier implements RawApplier {
                 doc.put(name, time.toString());
             } else {
                 Time t = (Time) value;
-                doc.put(name, t.toString());
+                doc.append(name, t.toString());
             }
         } else
-            doc.put(name, value.toString());
+            doc.append(name, value.toString());
     }
 
+    // transfor document to filter 
+    private Bson setQuery(Document doc)
+            throws ReplicatorException {
+        Iterator iter = doc.keySet().iterator();
+        List<Bson> filter = new ArrayList<Bson>(doc.size());
+        while (iter.hasNext()) {
+            String key = iter.next().toString();
+            filter.add(eq(key, doc.get(key)));
+        }
+        Bson result = and(filter);
+        return result;
+    }
+
+    // generate index name use the first char of field
     private String generateIndexName(DBObject keys) {
         Iterator i$ = keys.keySet().iterator();
         String name = "";
@@ -325,7 +404,7 @@ public class MongoApplier implements RawApplier {
     }
 
     // Ensure that a collection has required indexes.
-    private void ensureIndexes(DBCollection coll, OneRowChange orc) {
+    private void ensureIndexes(MongoCollection<Document> coll, OneRowChange orc) {
         // If we have not seen this table before, check whether it
         // needs an index.
         if (autoIndex) {
@@ -346,9 +425,9 @@ public class MongoApplier implements RawApplier {
                     for (ColumnSpec keySpec : keySpecs) {
                         builder.add(keySpec.getName(), 1);
                     }
-//                    coll.ensureIndex(builder.get());
                     DBObject keys = builder.get();
-                    coll.ensureIndex(keys, generateIndexName(keys));
+                    Document keys_d = Document.parse(keys.toString());
+                    coll.createIndex(keys_d);
                 }
 
                 // Note that we have processed the table.
@@ -394,37 +473,28 @@ public class MongoApplier implements RawApplier {
         }
 
         // Connect to the schema and collection.
-        DB db = m.getDB(serviceSchema);
-        DBCollection trepCommitSeqno = db.getCollection("trep_commit_seqno");
+        MongoDatabase db = m.getDatabase(serviceSchema);
+        MongoCollection<Document> trepCommitSeqno = db.getCollection("trep_commit_seqno");
 
         // Construct query.
-        DBObject query = new BasicDBObject();
-        query.put("task_id", taskId);
-
+        Document query = new Document();
         // Construct update.
-        BasicDBObject doc = new BasicDBObject();
-        doc.put("task_id", taskId);
-        doc.put("seqno", latestHeader.getSeqno());
+        Document doc = new Document();
+        doc.append("task_id", taskId);
+        doc.append("seqno", latestHeader.getSeqno());
         // Short seems to cast to Integer in MongoDB.
-        doc.put("fragno", latestHeader.getFragno());
-        doc.put("last_frag", latestHeader.getLastFrag());
-        doc.put("source_id", latestHeader.getSourceId());
-        doc.put("epoch_number", latestHeader.getEpochNumber());
-        doc.put("event_id", latestHeader.getEventId());
-        doc.put("extract_timestamp", latestHeader.getExtractedTstamp()
+        doc.append("fragno", latestHeader.getFragno());
+        doc.append("last_frag", latestHeader.getLastFrag());
+        doc.append("source_id", latestHeader.getSourceId());
+        doc.append("epoch_number", latestHeader.getEpochNumber());
+        doc.append("event_id", latestHeader.getEventId());
+        doc.append("extract_timestamp", latestHeader.getExtractedTstamp()
                 .getTime());
 
         // Update trep_commit_seqno.
-        DBObject updatedDoc = trepCommitSeqno.findAndModify(query, null, null,
-                false, doc, true, true);
-        if (logger.isDebugEnabled()) {
-            if (updatedDoc == null)
-                logger.debug("Unable to update/insert trep_commit_seqno: query="
-                        + query + " doc=" + doc);
-            else
-                logger.debug("Trep_commit_seqno updated: updatedDoc="
-                        + updatedDoc);
-        }
+        //Document updatedDoc = trepCommitSeqno.findAndModify(query, null, null,
+        //        false, doc, true, true);
+        trepCommitSeqno.updateOne(eq("task_id", taskId), new Document("$set", doc));
     }
 
     /**
@@ -436,15 +506,10 @@ public class MongoApplier implements RawApplier {
     public ReplDBMSHeader getLastEvent() throws ReplicatorException,
             InterruptedException {
         // Connect to the schema and collection.
-        DB db = m.getDB(serviceSchema);
-        DBCollection trepCommitSeqno = db.getCollection("trep_commit_seqno");
-
-        // Construct query.
-        DBObject query = new BasicDBObject();
-        query.put("task_id", taskId);
-
+        MongoDatabase  db = m.getDatabase(serviceSchema);
+        MongoCollection<Document> trepCommitSeqno = db.getCollection("trep_commit_seqno");
         // Find matching trep_commit_seqno value.
-        DBObject doc = trepCommitSeqno.findOne(query);
+        Document doc = trepCommitSeqno.find(eq("task_id", taskId)).first();
 
         // Return a constructed header or null, depending on whether we found
         // anything.
@@ -513,15 +578,30 @@ public class MongoApplier implements RawApplier {
             InterruptedException {
         // Connect to MongoDB.
         if (logger.isDebugEnabled()) {
-            logger.debug("Connecting to MongoDB: connectString="
+            logger.info("Connecting to MongoDB: connectString="
                     + connectString);
         }
         m = null;
         try {
             if (connectString == null)
-                m = new Mongo();
+                m = new MongoClient();
             else
-                m = new Mongo(connectString);
+            {
+                logger.info("Try to connect to MongoDB: connectString="
+                    + connectString);
+                if (connectAuth == "SCRAM-SHA-1" && connectPassword != null) {
+                    ServerAddress serverAddress = new ServerAddress(connectHost, Integer.parseInt(connectPort));
+                    List<ServerAddress> addrs = new ArrayList<ServerAddress>();
+                    addrs.add(serverAddress);
+                    MongoCredential credential = MongoCredential.createScramSha1Credential(connectUsername, authDatabase, connectPassword.toCharArray());
+                    List<MongoCredential> credentials = new ArrayList<MongoCredential>();
+                    credentials.add(credential);
+                    m = new MongoClient(addrs, credentials);
+                }
+                else if (connectPassword == null){
+                     m = new MongoClient(connectHost, Integer.parseInt(connectPort));
+                }
+            }
         } catch (Exception e) {
             throw new ReplicatorException(
                     "Unable to connect to MongoDB: connection="
