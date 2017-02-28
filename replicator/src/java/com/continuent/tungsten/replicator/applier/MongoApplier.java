@@ -62,6 +62,7 @@ import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.result.UpdateResult;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import static com.mongodb.client.model.Filters.eq;
@@ -159,7 +160,7 @@ public class MongoApplier implements RawApplier {
                       boolean doRollback) throws ReplicatorException,
             ConsistencyException, InterruptedException {
         ArrayList<DBMSData> dbmsDataValues = event.getData();
-        m.setWriteConcern(new WriteConcern(2));
+        //m.setWriteConcern(new WriteConcern(2));
         // WriteConcern wc = new WriteConcern();
         // wc.withW("majority");
         // m.setWriteConcern(wc);
@@ -255,7 +256,11 @@ public class MongoApplier implements RawApplier {
                             //doc_set.append("$set", doc);
                             //Document updatedRow = coll
                             //        .findAndModify(query, doc_set);
-                            coll.updateOne(setQuery(query), new Document("$set", doc));
+                            UpdateResult updateResult = coll.updateOne(setQuery(query), new Document("$set", doc));
+                            if (updateResult.getModifiedCount() == 0) {
+                                logger.warn("Unable to find document for update: query="
+                                            + query);
+                            }
                             /*
                             if (logger.isDebugEnabled()) {
                                 if (updatedRow == null)
@@ -494,7 +499,15 @@ public class MongoApplier implements RawApplier {
         // Update trep_commit_seqno.
         //Document updatedDoc = trepCommitSeqno.findAndModify(query, null, null,
         //        false, doc, true, true);
-        trepCommitSeqno.updateOne(eq("task_id", taskId), new Document("$set", doc));
+        UpdateResult updateResult = trepCommitSeqno.updateOne(eq("task_id", taskId), new Document("$set", doc));
+        //logger.info("task_id is: " + taskId);
+        //logger.info("modify count is: " + updateResult.getModifiedCount());
+        if (updateResult.getModifiedCount() == 0) {
+            if (trepCommitSeqno.count(eq("task_id", taskId)) == 0) {
+                trepCommitSeqno.insertOne(doc);
+                logger.info("Create database: " + serviceSchema);
+            }
+        }
     }
 
     /**
@@ -514,8 +527,8 @@ public class MongoApplier implements RawApplier {
         // Return a constructed header or null, depending on whether we found
         // anything.
         if (doc == null) {
-            if (logger.isDebugEnabled())
-                logger.debug("trep_commit_seqno is empty: taskId=" + taskId);
+            //if (logger.isDebugEnabled())
+            logger.warn("trep_commit_seqno is empty: taskId=" + taskId);
             return null;
         } else {
             if (logger.isDebugEnabled())
@@ -578,7 +591,7 @@ public class MongoApplier implements RawApplier {
             InterruptedException {
         // Connect to MongoDB.
         if (logger.isDebugEnabled()) {
-            logger.info("Connecting to MongoDB: connectString="
+            logger.debug("Connecting to MongoDB: connectString="
                     + connectString);
         }
         m = null;
@@ -588,8 +601,10 @@ public class MongoApplier implements RawApplier {
             else
             {
                 logger.info("Try to connect to MongoDB: connectString="
-                    + connectString);
-                if (connectAuth == "SCRAM-SHA-1" && connectPassword != null) {
+                    + connectString + ",user=" + connectUsername + ", password=" + connectPassword + ", authDatabase=" + authDatabase + ", connectAuth=" + connectAuth);
+                //if (connectAuth == "SCRAM-SHA-1" && connectPassword != null) {
+                if (connectPassword != null) {
+                    logger.info("Use SCRAM-SHA-1 auth");
                     ServerAddress serverAddress = new ServerAddress(connectHost, Integer.parseInt(connectPort));
                     List<ServerAddress> addrs = new ArrayList<ServerAddress>();
                     addrs.add(serverAddress);
@@ -607,7 +622,10 @@ public class MongoApplier implements RawApplier {
                     "Unable to connect to MongoDB: connection="
                             + this.connectString, e);
         }
-
+        WriteConcern wc = new WriteConcern();
+        wc.withW("majority");
+        m.setWriteConcern(wc);
+        //m.setWriteConcern(new WriteConcern(2));
         // Initialize table metadata cache.
         tableMetadataCache = new TableMetadataCache(5000);
     }
