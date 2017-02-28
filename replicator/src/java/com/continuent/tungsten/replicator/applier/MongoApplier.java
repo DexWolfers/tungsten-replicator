@@ -602,8 +602,7 @@ public class MongoApplier implements RawApplier {
             {
                 logger.info("Try to connect to MongoDB: connectString="
                     + connectString + ",user=" + connectUsername + ", password=" + connectPassword + ", authDatabase=" + authDatabase + ", connectAuth=" + connectAuth);
-                //if (connectAuth == "SCRAM-SHA-1" && connectPassword != null) {
-                if (connectPassword != null) {
+                if (connectAuth.equals("SCRAM-SHA-1") && connectPassword != null) {
                     logger.info("Use SCRAM-SHA-1 auth");
                     ServerAddress serverAddress = new ServerAddress(connectHost, Integer.parseInt(connectPort));
                     List<ServerAddress> addrs = new ArrayList<ServerAddress>();
